@@ -95,7 +95,28 @@ def process_pixels(
 ) -> numpy.ndarray:
     """Apply a pretrained model. We pass arguments that encode the necessary input shapes and number of channels to pad. We will valudate the yx dimensions and pad the channel dimension with zeros.
 
-    The pixels should be in order NCZYX (Tile, Channel, ZYX).
+    Input contract (caller side)
+    ----------------------------
+    pixels : NCZYX float32 in [0, 1]; H, W divisible by 16; Z=1.
+        Exactly 4 channels in **rybg slot order** — the channels the SubCell
+        paper trained on:
+            r → Microtubules
+            y → ER
+            b → Nucleus
+            g → Protein-of-interest
+        For Cell Painting that maps to [AGP, ER, DNA, Mito] (AGP stains
+        actin+golgi+plasma-membrane, used as a microtubule-like proxy).
+        Pass already-clipped pixels in [0, 1] — do NOT z-score; the model
+        was trained on linearly-scaled raw intensities and a z-score collapses
+        the embedding to near-zero cosine vs. the published output.
+
+    Server-side normalization (applied here)
+    ----------------------------------------
+    None — ``model(pixels)`` runs the published forward directly.
+
+    Output
+    ------
+    (N, 1536) — pool_op embedding (4 channels × 384-d each).
     """
 
     _, input_channels, _, *input_yx = pixels.shape
