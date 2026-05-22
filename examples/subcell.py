@@ -1,7 +1,7 @@
 """
 This example uses a server within the environment defined on `https://github.com/afermg/SubCellPortable.git`. You can read the `server.py` file at the root directory.
 
-Run `nix run github:afermg/subcellportable` from the root directory of that repository.
+Run `nix run github:afermg/subcellportable -- tcp://127.0.0.1:5110` from the root directory of that repository.
 """
 
 import numpy
@@ -9,7 +9,7 @@ import numpy
 from nahual.process import dispatch_setup_process
 
 setup, process = dispatch_setup_process("subcell")
-address = "ipc:///tmp/subcell.ipc"
+address = "tcp://127.0.0.1:5110"
 
 # %%Load models server-side
 parameters = dict(

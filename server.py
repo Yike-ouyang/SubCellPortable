@@ -1,12 +1,15 @@
 """Model deployment for SubCell https://github.com/afermg/SubCellPortable."""
 
+
+#uv run --python .venv/bin/python python server.py tcp://0.0.0.0:5110
+
 import sys
 from functools import partial
+from pathlib import Path
 
 import numpy
 import pynng
 import torch
-import transformers
 import trio
 from loguru import logger
 from nahual.preprocess import pad_channel_dim, validate_input_shape
@@ -20,47 +23,64 @@ guardrail_shapes = {
     "mae_contrast_supcon_model": (4, 16),  # TODO relax constraints?
 }
 
+DEFAULT_ADDRESS = "tcp://127.0.0.1:5110"
 
-def setup(model_type: str, model_channels: str, **kwargs) -> dict:
-    # Some default values
-    device = kwargs.get("device", 0)
 
-    # Some default values
-    setup_defaults = dict(
-        model_type="mae_contrast_supcon_model",
-        model_channels="rybg",
-        device=torch.device(device),
-    )
+def _normalize_device(device: int | str | torch.device | None) -> torch.device:
+    if isinstance(device, torch.device):
+        return device
+    if device is None:
+        device = 0
+    if isinstance(device, str) and device.startswith(("cuda:", "cpu")):
+        return torch.device(device)
+    device = int(device)
+    if device < 0:
+        return torch.device("cpu")
+    return torch.device(f"cuda:{device}")
+
+
+def setup(
+    model_type: str = "mae_contrast_supcon_model",
+    model_channels: str = "rybg",
+    device: int | str | torch.device | None = None,
+    **kwargs,
+) -> dict:
+    """Load a pretrained SubCell model and return a Nahual processor."""
+    device = _normalize_device(device)
+
     execution_defaults = dict()
 
     setup_kwargs = kwargs.get("setup_kwargs", {})
     execution_kwargs = kwargs.get("execution_kwargs", {})
 
-    # Define parameters by combining defaults and non-defaults
-    setup_params = {**setup_defaults, **setup_kwargs}
+    setup_params = {
+        "model_type": model_type,
+        "model_channels": model_channels,
+        **setup_kwargs,
+    }
     execution_params = {**execution_defaults, **execution_kwargs}
 
-    device = setup_params.pop("device")
     # Load model instance
-    print("before model loading")
     model = setup_model(**setup_params)
-    print("model loading passed")
     model = model.to(device)
     # model.eval() gets done within setup_model
 
-    expected_nchannels, yx_shape = guardrail_shapes[model_type]
+    expected_nchannels, yx_shape = guardrail_shapes[setup_params["model_type"]]
     execution_params["expected_nchannels"] = expected_nchannels
     execution_params["expected_yx"] = yx_shape
 
     # Generate a json-encodable dictionary to send back to the client
-    serializable_params = {
-        name: {k: str(v) for k, v in d.items()}
-        for name, d in zip(("setup", "execution"), (setup_params, execution_params))
+    info = {
+        "device": str(device),
+        "model_type": setup_params["model_type"],
+        "model_channels": setup_params["model_channels"],
+        "setup": {k: str(v) for k, v in setup_params.items()},
+        "execution": {k: str(v) for k, v in execution_params.items()},
     }
 
     # "Freeze" model in-place
     processor = partial(process_pixels, model=model, device=device, **execution_params)
-    return processor, serializable_params
+    return processor, info
 
 
 async def main():
@@ -91,7 +111,7 @@ def process_pixels(
     model,
     expected_yx: tuple[int],
     expected_nchannels: int,
-    device: int,
+    device: torch.device,
 ) -> numpy.ndarray:
     """Apply a pretrained model. We pass arguments that encode the necessary input shapes and number of channels to pad. We will valudate the yx dimensions and pad the channel dimension with zeros.
 
@@ -136,10 +156,9 @@ def process_pixels(
 
 
 if __name__ == "__main__":
-    # address = "ipc:///tmp/subcell.ipc"
-    address = sys.argv[1]
+    address = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ADDRESS
 
-    logger.add(address.split("/")[-1])
+    logger.add(Path(address.split("://", 1)[-1]).name.replace(":", "_"))
 
     try:
         trio.run(main)

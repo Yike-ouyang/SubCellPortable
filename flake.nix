@@ -62,7 +62,7 @@
             # so this can be dropped.
             export PYTHONPATH=${python_with_pkgs}/${python_with_pkgs.sitePackages}:${packages.nahual}/lib/python3.13/site-packages:${packages.pynng}/lib/python3.13/site-packages
             ${python_with_pkgs}/bin/python ${self}/ensure_model.py --model-channels ''${2:-"rybg"} --model-type ''${3:-"mae_contrast_supcon_model"}
-            ${python_with_pkgs}/bin/python ${self}/server.py ''${1:-"ipc:///tmp/subcell.ipc"}
+            ${python_with_pkgs}/bin/python ${self}/server.py ''${1:-"tcp://127.0.0.1:5110"}
           '';
         };
         apps = rec {
