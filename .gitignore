@@ -113,3 +113,6 @@ cython_debug/
 log.txt
 
 .DS_Store*
+
+0.0.0.0_5110
+uv.lock
