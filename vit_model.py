@@ -258,6 +258,25 @@ class ViTInferenceModel(ViTPreTrainedModel):
     def get_input_embeddings(self) -> ViTPatchEmbeddings:
         return self.embeddings.patch_embeddings
 
+    def get_head_mask(
+        self, head_mask: Optional[torch.Tensor], num_hidden_layers: int
+    ) -> List[Optional[torch.Tensor]]:
+        """Compatibility fallback for transformers variants without get_head_mask."""
+        if head_mask is None:
+            return [None] * num_hidden_layers
+
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        else:
+            raise ValueError(
+                f"head_mask must have dim 1 or 2, got shape {tuple(head_mask.shape)}"
+            )
+
+        return [head_mask[i] for i in range(num_hidden_layers)]
+
     def _prune_heads(self, heads_to_prune: Dict[int, List[int]]) -> None:
         """
         Prunes heads of the model. heads_to_prune: dict of {layer_num: list of heads to prune in this layer} See base
