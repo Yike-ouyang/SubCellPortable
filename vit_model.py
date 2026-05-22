@@ -50,6 +50,29 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _remap_encoder_checkpoint_keys(checkpoint: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """Normalize encoder checkpoint keys across transformers ViT variants."""
+    replacements = (
+        (".attention.attention.query.", ".attention.q_proj."),
+        (".attention.attention.key.", ".attention.k_proj."),
+        (".attention.attention.value.", ".attention.v_proj."),
+        (".attention.output.dense.", ".attention.o_proj."),
+        (".attention.query.", ".attention.q_proj."),
+        (".attention.key.", ".attention.k_proj."),
+        (".attention.value.", ".attention.v_proj."),
+        (".attention.dense.", ".attention.o_proj."),
+    )
+
+    remapped = {}
+    for key, value in checkpoint.items():
+        new_key = key
+        for old, new in replacements:
+            if old in new_key:
+                new_key = new_key.replace(old, new)
+        remapped[new_key] = value
+    return remapped
+
+
 @dataclass
 class ViTPoolModelOutput:
     attentions: Tuple[torch.FloatTensor] = None
@@ -361,8 +384,12 @@ class ViTPoolClassifier(nn.Module):
         encoder_ckpt = {
             k[len("encoder.") :]: v for k, v in checkpoint.items() if "encoder." in k
         }
+        encoder_ckpt = _remap_encoder_checkpoint_keys(encoder_ckpt)
 
-        status = self.encoder.load_state_dict(encoder_ckpt)
+        status = self.encoder.load_state_dict(encoder_ckpt, strict=False)
+        if status.missing_keys or status.unexpected_keys:
+            logger.warning(f"Encoder missing keys: {status.missing_keys}")
+            logger.warning(f"Encoder unexpected keys: {status.unexpected_keys}")
         logger.info(f"Encoder status: {status}")
 
         pool_ckpt = {
